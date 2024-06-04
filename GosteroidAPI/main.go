@@ -1,32 +1,48 @@
 package main
 
 import (
-    "log"
-    "net/http"
+	"net/http"
 
-    "github.com/gorilla/mux"
-    "github.com/your_project_name/handlers"
-    "github.com/your_project_name/middleware"
-    "github.com/your_project_name/models"
-    "github.com/your_project_name/utils"
+	"GosteroidAPI/handlers"
+	"GosteroidAPI/middleware"
+	"GosteroidAPI/models"
+	"GosteroidAPI/utils"
+	"github.com/labstack/echo/v4"
+	echomiddleware "github.com/labstack/echo/v4/middleware"
 )
 
 func main() {
-    utils.LoadEnv()
-    models.InitDatabase()
+	utils.LoadEnv()
+	models.InitDatabase()
 
-    r := mux.NewRouter()
+	e := echo.New()
 
-    api := r.PathPrefix("/api/v1").Subrouter()
+	// Middleware
+	e.Use(echomiddleware.Logger())
+	e.Use(echomiddleware.Recover())
 
-    api.HandleFunc("/asteroides", handlers.CreateAsteroid).Methods("POST")
-    api.HandleFunc("/asteroides", handlers.GetAsteroids).Methods("GET")
-    api.HandleFunc("/asteroides/{id}", handlers.GetAsteroidByID).Methods("GET")
-    api.HandleFunc("/asteroides/{id}", handlers.UpdateAsteroid).Methods("PATCH")
-    api.HandleFunc("/asteroides/{id}", handlers.DeleteAsteroid).Methods("DELETE")
+	// JWT generation route for testing
+	e.POST("/login", middleware.GenerateJWT)
 
-    // JWT protected routes
-    api.Use(middleware.JwtVerify)
+	// JWT protected routes
+	api := e.Group("/api/v1")
+	api.Use(middleware.JwtMiddleware())
 
-    log.Fatal(http.ListenAndServe(":8080", r))
+	api.POST("/asteroides", handlers.CreateAsteroid)
+	api.GET("/asteroides", handlers.GetAsteroids)
+	api.GET("/asteroides/:id", handlers.GetAsteroidByID)
+	api.PATCH("/asteroides/:id", handlers.UpdateAsteroid)
+	api.DELETE("/asteroides/:id", handlers.DeleteAsteroid)
+
+	// Custom 404 handler
+	e.HTTPErrorHandler = func(err error, c echo.Context) {
+		code := http.StatusInternalServerError
+		if he, ok := err.(*echo.HTTPError); ok {
+			code = he.Code
+		}
+		c.JSON(code, map[string]string{"message": "Not Found"})
+	}
+
+	// Start server
+	e.Logger.Fatal(e.Start(":8080"))
 }

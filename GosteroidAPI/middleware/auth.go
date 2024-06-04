@@ -1,41 +1,31 @@
 package middleware
 
 import (
-    "context"
-    "net/http"
-    "strings"
-
-    "github.com/dgrijalva/jwt-go"
-    "github.com/your_project_name/utils"
+	"GosteroidAPI/utils"
+	"github.com/golang-jwt/jwt"
+	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v4/middleware"
+	"net/http"
+	"time"
 )
 
-type key int
+// JwtMiddleware returns the middleware for JWT authentication
+func JwtMiddleware() echo.MiddlewareFunc {
+	return middleware.JWTWithConfig(middleware.JWTConfig{
+		SigningKey: []byte(utils.GetEnv("JWT_SECRET")),
+	})
+}
 
-const (
-    UserKey key = iota
-)
-
-func JwtVerify(next http.Handler) http.Handler {
-    return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-        authHeader := r.Header.Get("Authorization")
-        if authHeader == "" {
-            http.Error(w, "Authorization header required", http.StatusUnauthorized)
-            return
-        }
-
-        tokenString := strings.Split(authHeader, " ")[1]
-        token, err := jwt.Parse(tokenString, func(token *jwt.Token) (interface{}, error) {
-            if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-                return nil, http.ErrAbortHandler
-            }
-            return []byte(utils.GetEnv("JWT_SECRET")), nil
-        })
-
-        if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
-            ctx := context.WithValue(r.Context(), UserKey, claims)
-            next.ServeHTTP(w, r.WithContext(ctx))
-        } else {
-            http.Error(w, err.Error(), http.StatusUnauthorized)
-        }
-    })
+// GenerateJWT generates a JWT token for testing purposes
+func GenerateJWT(c echo.Context) error {
+	claims := &jwt.StandardClaims{
+		ExpiresAt: time.Now().Add(time.Hour * 72).Unix(),
+		Issuer:    "GosteroidAPI",
+	}
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+	tokenString, err := token.SignedString([]byte(utils.GetEnv("JWT_SECRET")))
+	if err != nil {
+		return c.JSON(http.StatusInternalServerError, map[string]string{"message": "could not generate token"})
+	}
+	return c.JSON(http.StatusOK, map[string]string{"token": tokenString})
 }
